@@ -3,6 +3,10 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from datetime import datetime, time
 from bson import ObjectId
+import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+# ... y el resto de tus importaciones normales
 
 app = Flask(__name__)
 CORS(app)
