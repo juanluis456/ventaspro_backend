@@ -1,12 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
-from datetime import datetime, time
+from datetime import datetime, time, timedelta # <--- AGREGAMOS timedelta
 from bson import ObjectId
 import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-# ... y el resto de tus importaciones normales
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +11,11 @@ CORS(app)
 # ☁️ 1. CONEXIÓN A LA NUBE 
 URI_ATLAS = "mongodb+srv://admin_tiendas:Admin12345@cluster0.lqodd.mongodb.net/?appName=Cluster0"
 cliente = MongoClient(URI_ATLAS)
+
+# 🔥 FUNCIÓN PARA HORA DE MÉXICO (Soluciona el problema de los días combinados)
+def ahora_mx():
+    # Render usa la hora UTC (Inglaterra). Le restamos 6 horas para tener la hora exacta de México.
+    return datetime.utcnow() - timedelta(hours=6)
 
 # 🔐 EL GUARDIA DE SEGURIDAD (AHORA LEE MÓDULOS VIP)
 @app.route('/api/login', methods=['POST'])
@@ -123,7 +125,7 @@ def registrar_venta():
     for articulo in datos['carrito']:
         coleccion_productos.update_one({"codigo": articulo['codigo'], "id_tienda": tienda_id}, {"$inc": {"stock": -float(articulo['cantidad'])}})
     nueva_venta = {
-        "id_tienda": tienda_id, "fecha": datetime.now(), "articulos": datos['carrito'],
+        "id_tienda": tienda_id, "fecha": ahora_mx(), "articulos": datos['carrito'], # <-- AHORA USA LA HORA DE MX
         "total": float(datos['total']), "pago_con": float(datos.get('pago_con', datos['total'])),
         "cambio": float(datos.get('cambio', 0))
     }
@@ -134,8 +136,10 @@ def registrar_venta():
 def historial_ventas():
     tienda_id, _, coleccion_ventas = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
-    hoy_inicio = datetime.combine(datetime.now().date(), time.min)
-    hoy_fin = datetime.combine(datetime.now().date(), time.max)
+    # 👇 MODO MAGIA: Calcula inicio y fin basándose en la hora de México
+    hoy = ahora_mx()
+    hoy_inicio = datetime.combine(hoy.date(), time.min)
+    hoy_fin = datetime.combine(hoy.date(), time.max)
     ventas = list(coleccion_ventas.find({"id_tienda": tienda_id, "fecha": {"$gte": hoy_inicio, "$lte": hoy_fin}}).sort("fecha", -1))
     for venta in ventas:
         venta['_id'] = str(venta['_id']) 
@@ -181,8 +185,10 @@ def borrar_todo_el_historial():
 def corte_de_caja():
     tienda_id, _, coleccion_ventas = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
-    hoy_inicio = datetime.combine(datetime.now().date(), time.min)
-    hoy_fin = datetime.combine(datetime.now().date(), time.max)
+    # 👇 MODO MAGIA: Calcula inicio y fin basándose en la hora de México
+    hoy = ahora_mx()
+    hoy_inicio = datetime.combine(hoy.date(), time.min)
+    hoy_fin = datetime.combine(hoy.date(), time.max)
     ventas_hoy = list(coleccion_ventas.find({"id_tienda": tienda_id, "fecha": {"$gte": hoy_inicio, "$lte": hoy_fin}}))
     total_dinero = sum(venta.get('total', 0) for venta in ventas_hoy)
     total_ganancia = 0
@@ -192,7 +198,7 @@ def corte_de_caja():
     for venta in ventas_hoy:
         venta['_id'] = str(venta['_id'])
         if isinstance(venta.get('fecha'), datetime): venta['fecha'] = venta['fecha'].isoformat()
-    return jsonify({ "fecha_reporte": datetime.now().strftime("%Y-%m-%d"), "hora_corte": datetime.now().strftime("%H:%M:%S"), "total_ventas": len(ventas_hoy), "total_dinero": total_dinero, "total_ganancia": total_ganancia, "detalles": ventas_hoy }), 200
+    return jsonify({ "fecha_reporte": hoy.strftime("%Y-%m-%d"), "hora_corte": hoy.strftime("%H:%M:%S"), "total_ventas": len(ventas_hoy), "total_dinero": total_dinero, "total_ganancia": total_ganancia, "detalles": ventas_hoy }), 200
 
 if __name__ == '__main__':
     # Render asigna el puerto automáticamente, si no hay, usa el 5000
