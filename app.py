@@ -93,7 +93,8 @@ def surtir_producto_masivo():
             if resultado.matched_count > 0: productos_actualizados += 1
     return jsonify({"mensaje": f"¡Cargamento aplicado! Se reabastecieron {productos_actualizados} productos."}), 200
     
-@app.route('/api/productos/<codigo>', methods=['PUT'])
+# 🔥 FIX APLICADO: <path:codigo> y strip() para que no fallen los espacios
+@app.route('/api/productos/<path:codigo>', methods=['PUT'])
 def editar_producto(codigo):
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
@@ -105,15 +106,26 @@ def editar_producto(codigo):
     if 'stock' in datos: actualizacion['stock'] = float(datos['stock'])
     if 'tipo_unidad' in datos: actualizacion['tipo_unidad'] = datos['tipo_unidad']
     if 'contenido' in datos: actualizacion['contenido'] = datos['contenido']
-    resultado = coleccion_productos.update_one({"codigo": codigo, "id_tienda": tienda_id}, {"$set": actualizacion})
+    
+    # Busca por coincidencia exacta o sin espacios
+    resultado = coleccion_productos.update_one(
+        {"$or": [{"codigo": codigo}, {"codigo": codigo.strip()}], "id_tienda": tienda_id}, 
+        {"$set": actualizacion}
+    )
     if resultado.matched_count > 0: return jsonify({"mensaje": "¡Producto actualizado!"}), 200
     else: return jsonify({"error": "Producto no encontrado"}), 404
 
-@app.route('/api/productos/<codigo>', methods=['DELETE'])
+# 🔥 FIX APLICADO: <path:codigo> y strip() para que no fallen los espacios
+@app.route('/api/productos/<path:codigo>', methods=['DELETE'])
 def borrar_producto(codigo):
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
-    resultado = coleccion_productos.delete_one({"codigo": codigo, "id_tienda": tienda_id})
+    
+    # Busca por coincidencia exacta o sin espacios
+    resultado = coleccion_productos.delete_one({
+        "$or": [{"codigo": codigo}, {"codigo": codigo.strip()}], 
+        "id_tienda": tienda_id
+    })
     if resultado.deleted_count > 0: return jsonify({"mensaje": "Producto eliminado"}), 200
     else: return jsonify({"error": "Producto no encontrado"}), 404
 
