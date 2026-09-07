@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -75,7 +76,9 @@ def agregar_producto():
         "id_tienda": tienda_id, "codigo": datos['codigo'], "nombre": datos['nombre'],
         "precio": float(datos['precio']), "precio_compra": float(datos.get('precio_compra', 0)),
         "stock": float(datos['stock']), "tipo_unidad": datos.get('tipo_unidad', 'pza'),
-        "contenido": datos.get('contenido', '')
+        "contenido": datos.get('contenido', ''),
+        "categoria": datos.get('categoria', 'General'), # 🔥 NUEVO: Recibe la categoría
+        "imagen": datos.get('imagen', '')               # 🔥 NUEVO: Recibe el link de la imagen
     }
     coleccion_productos.insert_one(nuevo_producto)
     return jsonify({"mensaje": "Producto guardado con éxito"}), 201
@@ -106,6 +109,8 @@ def editar_producto(codigo):
     if 'stock' in datos: actualizacion['stock'] = float(datos['stock'])
     if 'tipo_unidad' in datos: actualizacion['tipo_unidad'] = datos['tipo_unidad']
     if 'contenido' in datos: actualizacion['contenido'] = datos['contenido']
+    if 'categoria' in datos: actualizacion['categoria'] = datos['categoria'] # 🔥 NUEVO: Actualiza la categoría
+    if 'imagen' in datos: actualizacion['imagen'] = datos['imagen']          # 🔥 NUEVO: Actualiza la imagen
     
     # Busca por coincidencia exacta o sin espacios
     resultado = coleccion_productos.update_one(
