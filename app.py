@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -216,6 +215,37 @@ def corte_de_caja():
         venta['_id'] = str(venta['_id'])
         if isinstance(venta.get('fecha'), datetime): venta['fecha'] = venta['fecha'].isoformat()
     return jsonify({ "fecha_reporte": hoy.strftime("%Y-%m-%d"), "hora_corte": hoy.strftime("%H:%M:%S"), "total_ventas": len(ventas_hoy), "total_dinero": total_dinero, "total_ganancia": total_ganancia, "detalles": ventas_hoy }), 200
+
+# 🔥 MAGIA PURA: RUTA SECRETA PARA CLONAR CATÁLOGO A CLIENTES NUEVOS (NO TOCÓ NADA MÁS)
+@app.route('/api/clonar_catalogo/<id_origen>/<id_destino>', methods=['GET'])
+def clonar_catalogo(id_origen, id_destino):
+    # Conectamos a las bases de datos de cada tienda
+    coleccion_origen = cliente[id_origen]['productos']
+    coleccion_destino = cliente[id_destino]['productos']
+    
+    # Jalamos todos los productos de la tienda origen
+    productos_origen = list(coleccion_origen.find({"id_tienda": id_origen}))
+    
+    if not productos_origen:
+        return jsonify({"error": f"No se encontraron productos en la tienda {id_origen}"}), 404
+        
+    productos_nuevos = []
+    for prod in productos_origen:
+        prod.pop('_id', None)          # Quitamos el ID viejo para que Mongo genere uno nuevo
+        prod['id_tienda'] = id_destino # Asignamos la nueva tienda
+        prod['stock'] = 0.0            # El stock empieza en 0 para el cliente nuevo
+        productos_nuevos.append(prod)
+        
+    # Limpiamos la colección destino por si las moscas (evita duplicados si recargas la página)
+    coleccion_destino.delete_many({"id_tienda": id_destino})
+    
+    # Insertamos todo el catálogo de un jalón
+    coleccion_destino.insert_many(productos_nuevos)
+    
+    return jsonify({
+        "exito": True,
+        "mensaje": f"¡Clonación Maestra! Se copiaron {len(productos_nuevos)} productos de '{id_origen}' a '{id_destino}'.",
+    }), 200
 
 if __name__ == '__main__':
     # Render asigna el puerto automáticamente, si no hay, usa el 5000
