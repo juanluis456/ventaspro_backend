@@ -49,18 +49,28 @@ def obtener_colecciones_privadas():
     db_privada = cliente[tienda_id]
     return tienda_id, db_privada['productos'], db_privada['ventas']
 
+# 🔥 MODIFICADO: Ya no muestra los eliminados en el almacén principal
 @app.route('/api/productos', methods=['GET'])
 def obtener_todos_los_productos():
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
-    productos = list(coleccion_productos.find({"id_tienda": tienda_id}, {"_id": 0}))
+    productos = list(coleccion_productos.find({"id_tienda": tienda_id, "estado": {"$ne": "eliminado"}}, {"_id": 0}))
     return jsonify(productos), 200
 
+# 🔥 NUEVO: Ruta exclusiva para traer los eliminados (La Papelera)
+@app.route('/api/productos/eliminados', methods=['GET'])
+def obtener_productos_eliminados():
+    tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
+    if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
+    productos_basura = list(coleccion_productos.find({"id_tienda": tienda_id, "estado": "eliminado"}, {"_id": 0}))
+    return jsonify(productos_basura), 200
+
+# 🔥 MODIFICADO: No busca productos eliminados al escanear
 @app.route('/api/productos/<codigo>', methods=['GET'])
 def buscar_producto(codigo):
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
-    producto = coleccion_productos.find_one({"codigo": codigo, "id_tienda": tienda_id}, {"_id": 0})
+    producto = coleccion_productos.find_one({"codigo": codigo, "id_tienda": tienda_id, "estado": {"$ne": "eliminado"}}, {"_id": 0})
     if producto: return jsonify(producto), 200
     else: return jsonify({"error": "Producto no encontrado"}), 404
 
@@ -76,8 +86,9 @@ def agregar_producto():
         "precio": float(datos['precio']), "precio_compra": float(datos.get('precio_compra', 0)),
         "stock": float(datos['stock']), "tipo_unidad": datos.get('tipo_unidad', 'pza'),
         "contenido": datos.get('contenido', ''),
-        "categoria": datos.get('categoria', 'General'), # 🔥 NUEVO: Recibe la categoría
-        "imagen": datos.get('imagen', '')               # 🔥 NUEVO: Recibe el link de la imagen
+        "categoria": datos.get('categoria', 'General'), 
+        "imagen": datos.get('imagen', ''),
+        "estado": "activo" # 🔥 NUEVO: Al crearlo, nace como "activo"
     }
     coleccion_productos.insert_one(nuevo_producto)
     return jsonify({"mensaje": "Producto guardado con éxito"}), 201
@@ -95,7 +106,6 @@ def surtir_producto_masivo():
             if resultado.matched_count > 0: productos_actualizados += 1
     return jsonify({"mensaje": f"¡Cargamento aplicado! Se reabastecieron {productos_actualizados} productos."}), 200
     
-# 🔥 FIX APLICADO: <path:codigo> y strip() para que no fallen los espacios
 @app.route('/api/productos/<path:codigo>', methods=['PUT'])
 def editar_producto(codigo):
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
@@ -108,8 +118,8 @@ def editar_producto(codigo):
     if 'stock' in datos: actualizacion['stock'] = float(datos['stock'])
     if 'tipo_unidad' in datos: actualizacion['tipo_unidad'] = datos['tipo_unidad']
     if 'contenido' in datos: actualizacion['contenido'] = datos['contenido']
-    if 'categoria' in datos: actualizacion['categoria'] = datos['categoria'] # 🔥 NUEVO: Actualiza la categoría
-    if 'imagen' in datos: actualizacion['imagen'] = datos['imagen']          # 🔥 NUEVO: Actualiza la imagen
+    if 'categoria' in datos: actualizacion['categoria'] = datos['categoria'] 
+    if 'imagen' in datos: actualizacion['imagen'] = datos['imagen']          
     
     # Busca por coincidencia exacta o sin espacios
     resultado = coleccion_productos.update_one(
@@ -119,18 +129,44 @@ def editar_producto(codigo):
     if resultado.matched_count > 0: return jsonify({"mensaje": "¡Producto actualizado!"}), 200
     else: return jsonify({"error": "Producto no encontrado"}), 404
 
-# 🔥 FIX APLICADO: <path:codigo> y strip() para que no fallen los espacios
+# 🔥 MODIFICADO: BORRADO LÓGICO (Lo mandamos a la papelera)
 @app.route('/api/productos/<path:codigo>', methods=['DELETE'])
 def borrar_producto(codigo):
     tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
     if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
     
-    # Busca por coincidencia exacta o sin espacios
+    # En vez de "delete_one", hacemos un "update_one" para ocultarlo
+    resultado = coleccion_productos.update_one(
+        {"$or": [{"codigo": codigo}, {"codigo": codigo.strip()}], "id_tienda": tienda_id}, 
+        {"$set": {"estado": "eliminado"}}
+    )
+    if resultado.matched_count > 0: return jsonify({"mensaje": "Producto enviado a la Papelera de Reciclaje 🗑️"}), 200
+    else: return jsonify({"error": "Producto no encontrado"}), 404
+
+# 🔥 NUEVO: RESTAURAR PRODUCTO DE LA PAPELERA
+@app.route('/api/productos/restaurar/<path:codigo>', methods=['PUT'])
+def restaurar_producto(codigo):
+    tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
+    if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
+    
+    resultado = coleccion_productos.update_one(
+        {"$or": [{"codigo": codigo}, {"codigo": codigo.strip()}], "id_tienda": tienda_id}, 
+        {"$set": {"estado": "activo"}}
+    )
+    if resultado.matched_count > 0: return jsonify({"mensaje": "¡Producto restaurado al almacén con éxito! ♻️"}), 200
+    else: return jsonify({"error": "Producto no encontrado"}), 404
+
+# 🔥 NUEVO: DESTRUIR PRODUCTO PARA SIEMPRE
+@app.route('/api/productos/destruir/<path:codigo>', methods=['DELETE'])
+def destruir_producto(codigo):
+    tienda_id, coleccion_productos, _ = obtener_colecciones_privadas()
+    if not tienda_id: return jsonify({"error": "Falta el ID de la tienda"}), 400
+    
     resultado = coleccion_productos.delete_one({
         "$or": [{"codigo": codigo}, {"codigo": codigo.strip()}], 
         "id_tienda": tienda_id
     })
-    if resultado.deleted_count > 0: return jsonify({"mensaje": "Producto eliminado"}), 200
+    if resultado.deleted_count > 0: return jsonify({"mensaje": "Producto destruido para siempre 🔥"}), 200
     else: return jsonify({"error": "Producto no encontrado"}), 404
 
 @app.route('/api/ventas', methods=['POST'])
@@ -223,8 +259,8 @@ def clonar_catalogo(id_origen, id_destino):
     coleccion_origen = cliente[id_origen]['productos']
     coleccion_destino = cliente[id_destino]['productos']
     
-    # Jalamos todos los productos de la tienda origen
-    productos_origen = list(coleccion_origen.find({"id_tienda": id_origen}))
+    # Jalamos todos los productos de la tienda origen que NO estén eliminados
+    productos_origen = list(coleccion_origen.find({"id_tienda": id_origen, "estado": {"$ne": "eliminado"}}))
     
     if not productos_origen:
         return jsonify({"error": f"No se encontraron productos en la tienda {id_origen}"}), 404
@@ -234,6 +270,7 @@ def clonar_catalogo(id_origen, id_destino):
         prod.pop('_id', None)          # Quitamos el ID viejo para que Mongo genere uno nuevo
         prod['id_tienda'] = id_destino # Asignamos la nueva tienda
         prod['stock'] = 0.0            # El stock empieza en 0 para el cliente nuevo
+        prod['estado'] = "activo"      # Nos aseguramos de que clonen como activos
         productos_nuevos.append(prod)
         
     # Limpiamos la colección destino por si las moscas (evita duplicados si recargas la página)
